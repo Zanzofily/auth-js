@@ -943,8 +943,7 @@ describe('GoTrueClient with storageisServer = true', () => {
 
     expect(warnings.length).toEqual(0)
   })
-
-  test('getSession() emits insecure warning, once per server client, when user object is accessed', async () => {
+  test('getSession() emits insecure warning, once per server client, when user object is accessed with no jwtSecret', async () => {
     const storage = memoryLocalStorageAdapter({
       [STORAGE_KEY]: JSON.stringify({
         access_token: 'jwt.accesstoken.signature',
@@ -960,7 +959,7 @@ describe('GoTrueClient with storageisServer = true', () => {
     storage.isServer = true
 
     const client = new GoTrueClient({
-      storage,
+      storage
     })
 
     const {
@@ -987,6 +986,35 @@ describe('GoTrueClient with storageisServer = true', () => {
     const user3 = session2?.user // accessing the user object in subsequent proxy instances, for this client, should not emit a warning
     expect(user3).not.toBeNull()
     expect(warnings.length).toEqual(1)
+  })
+
+  test('getSession emits no warnings if jwtSecret is provided', async () => {
+    const storage = memoryLocalStorageAdapter({
+      [STORAGE_KEY]: JSON.stringify({
+        access_token: 'jwt.accesstoken.signature',
+        refresh_token: 'refresh-token',
+        token_type: 'bearer',
+        expires_in: 1000,
+        expires_at: Date.now() / 1000 + 1000,
+        user: {
+          id: 'random-user-id',
+        },
+      }),
+    })
+    storage.isServer = true
+
+    const client = new GoTrueClient({
+      storage,
+      jwtSecret: "jwt-secret"
+    })
+
+    const {
+      data: { session },
+    } = await client.getSession()
+
+    const user = session?.user // accessing the user object from getSession should emit a warning the first time
+    expect(user).not.toBeNull()
+    expect(warnings.length).toEqual(0)
   })
 
   test('getSession emits no warnings if getUser is called prior', async () => {

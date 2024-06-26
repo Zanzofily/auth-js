@@ -1,3 +1,5 @@
+import jwt from "jsonwebtoken";
+
 import GoTrueAdminApi from './GoTrueAdminApi'
 import { DEFAULT_HEADERS, EXPIRY_MARGIN, GOTRUE_URL, STORAGE_KEY } from './lib/constants'
 import {
@@ -11,6 +13,7 @@ import {
   isAuthApiError,
   isAuthError,
   isAuthRetryableFetchError,
+  AuthInvalidJWTSecret,
 } from './lib/errors'
 import {
   Fetch,
@@ -91,7 +94,7 @@ import type {
 
 polyfillGlobalThis() // Make "globalThis" available
 
-const DEFAULT_OPTIONS: Omit<Required<GoTrueClientOptions>, 'fetch' | 'storage' | 'lock'> = {
+const DEFAULT_OPTIONS: Omit<Required<GoTrueClientOptions>, 'fetch' | 'storage' | 'lock' | 'jwtSecret'> = {
   url: GOTRUE_URL,
   storageKey: STORAGE_KEY,
   autoRefreshToken: true,
@@ -156,6 +159,7 @@ export default class GoTrueClient {
     [key: string]: string
   }
   protected hasCustomAuthorizationHeader = false
+  protected jwtSecret?: string
   protected suppressGetSessionWarning = false
   protected fetch: Fetch
   protected lock: LockFunc
@@ -206,6 +210,10 @@ export default class GoTrueClient {
     this.detectSessionInUrl = settings.detectSessionInUrl
     this.flowType = settings.flowType
     this.hasCustomAuthorizationHeader = settings.hasCustomAuthorizationHeader
+
+    if (settings.jwtSecret) {
+      this.jwtSecret = settings.jwtSecret
+    }
 
     if (settings.lock) {
       this.lock = settings.lock
@@ -1090,26 +1098,49 @@ export default class GoTrueClient {
       )
 
       if (!hasExpired) {
-        if (this.storage.isServer) {
-          let suppressWarning = this.suppressGetSessionWarning
-          const proxySession: Session = new Proxy(currentSession, {
-            get: (target: any, prop: string, receiver: any) => {
-              if (!suppressWarning && prop === 'user') {
-                // only show warning when the user object is being accessed from the server
-                console.warn(
-                  'Using the user object as returned from supabase.auth.getSession() or from some supabase.auth.onAuthStateChange() events could be insecure! This value comes directly from the storage medium (usually cookies on the server) and many not be authentic. Use supabase.auth.getUser() instead which authenticates the data by contacting the Supabase Auth server.'
-                )
-                suppressWarning = true // keeps this proxy instance from logging additional warnings
-                this.suppressGetSessionWarning = true // keeps this client's future proxy instances from warning
-              }
-              return Reflect.get(target, prop, receiver)
-            },
-          })
-          currentSession = proxySession
+        // If it's client side or session warning is disabled we return the session
+        if (!this.storage.isServer || !this.suppressGetSessionWarning) {
+          return { data: { session: currentSession }, error: null };
         }
-
-        return { data: { session: currentSession }, error: null }
-      }
+      
+        // Session is being fetched in a server environment
+        if (this.storage.isServer) {
+          // No JWT secret provided
+          if (!this.jwtSecret) {
+            let localSuppressWarning = this.suppressGetSessionWarning;
+            
+            // Create a proxy to wrap 'currentSession'
+            const proxySession: Session = new Proxy(currentSession, {
+              get: (target: any, prop: string, receiver: any) => {
+                // Show a warning only when accessing the 'user' property for the first time
+                if (!localSuppressWarning && prop === 'user') {
+                  console.warn(
+                    'Using the user object as returned from supabase.auth.getSession() or from some supabase.auth.onAuthStateChange() events could be insecure! This value comes directly from the storage medium (usually cookies on the server) and may not be authentic. Use supabase.auth.getUser() instead which authenticates the data by contacting the Supabase Auth server.'
+                  );
+                  // Prevent further warnings for this proxy instance and future instances
+                  localSuppressWarning = true;
+                  this.suppressGetSessionWarning = true;
+                }
+                // Perform the default behavior for property access
+                return Reflect.get(target, prop, receiver);
+              },
+            });
+      
+            // Assign the proxy to 'currentSession'
+            currentSession = proxySession;
+          } else {
+            try {
+              // Verify the JWT using the provided secret
+              jwt.verify(currentSession.access_token, this.jwtSecret);
+            } catch (error) {
+              // The JWT secret is invalid, since expiry time validation has been previously performed.
+              // Note: jwt.TokenExpiredError will never be thrown in this context unless the jwt is an attack vector.
+              // Therefore, it is safe to return a null session and issue a warning.
+              return { data: { session: null }, error: new AuthInvalidJWTSecret() };
+            }
+          }
+        }
+      }      
 
       const { session, error } = await this._callRefreshToken(currentSession.refresh_token)
       if (error) {

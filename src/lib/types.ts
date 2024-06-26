@@ -85,6 +85,8 @@ export type GoTrueClientOptions = {
    * @experimental
    */
   hasCustomAuthorizationHeader?: boolean
+  /* JWT secret key used to validate the session for server-side operations. */
+  jwtSecret?: string
 }
 
 export type WeakPasswordReasons = 'length' | 'characters' | 'pwned' | string
