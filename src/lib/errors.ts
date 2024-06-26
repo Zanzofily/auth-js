@@ -63,6 +63,11 @@ export class CustomAuthError extends AuthError {
   }
 }
 
+export class AuthJWTSecretExposed extends AuthError {
+  constructor() {
+    super('JWT secret is invalid!', undefined, 'AuthInvalidJWTSecret')
+  }
+}
 export class AuthInvalidJWTSecret extends CustomAuthError {
   constructor() {
     super('JWT secret is invalid!', 'AuthInvalidJWTSecret', 401, undefined)

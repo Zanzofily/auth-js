@@ -212,6 +212,9 @@ export default class GoTrueClient {
     this.hasCustomAuthorizationHeader = settings.hasCustomAuthorizationHeader
 
     if (settings.jwtSecret) {
+      if(isBrowser()) {
+        throw new Error('Unsafe auth options: JWT Secret is exposed to client side.')
+      }
       this.jwtSecret = settings.jwtSecret
     }
 

@@ -1,4 +1,4 @@
-import { AuthError } from '../src/lib/errors'
+import { AuthError, AuthJWTSecretExposed } from '../src/lib/errors'
 import { STORAGE_KEY } from '../src/lib/constants'
 import { memoryLocalStorageAdapter } from '../src/lib/local-storage'
 import GoTrueClient from '../src/GoTrueClient'
@@ -943,6 +943,31 @@ describe('GoTrueClient with storageisServer = true', () => {
 
     expect(warnings.length).toEqual(0)
   })
+
+  test('GoTrueClient emits an error when JWT secret is provided on client side', async () => {
+    const storage = memoryLocalStorageAdapter({
+      [STORAGE_KEY]: JSON.stringify({
+        access_token: 'jwt.accesstoken.signature',
+        refresh_token: 'refresh-token',
+        token_type: 'bearer',
+        expires_in: 1000,
+        expires_at: Date.now() / 1000 + 1000,
+        user: {
+          id: 'random-user-id',
+        },
+      }),
+    })
+    storage.isServer = false
+
+    expect(() => {
+      new GoTrueClient({
+        storage,
+        jwtSecret: "jwt-secret"
+      })
+    }).toThrow(AuthJWTSecretExposed)
+
+  })
+
   test('getSession() emits insecure warning, once per server client, when user object is accessed with no jwtSecret', async () => {
     const storage = memoryLocalStorageAdapter({
       [STORAGE_KEY]: JSON.stringify({
