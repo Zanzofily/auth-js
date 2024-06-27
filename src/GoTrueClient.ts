@@ -90,6 +90,7 @@ import type {
   LockFunc,
   UserIdentity,
   SignInAnonymouslyCredentials,
+  SessionJwtPayload,
 } from './lib/types'
 
 polyfillGlobalThis() // Make "globalThis" available
@@ -1134,7 +1135,11 @@ export default class GoTrueClient {
           } else {
             try {
               // Verify the JWT using the provided secret
-              jwt.verify(currentSession.access_token, this.jwtSecret);
+              const jwtSession = jwt.verify(currentSession.access_token, this.jwtSecret) as SessionJwtPayload;
+              // make sure the returned user isn't spoofed (except for created_at)
+              currentSession.user = {...jwtSession, id: jwtSession.sub, created_at: currentSession.user.created_at}
+              
+              return { data: { session: currentSession }, error: null };
             } catch (error) {
               // The JWT secret is invalid, since expiry time validation has been previously performed.
               // Note: jwt.TokenExpiredError will never be thrown in this context unless the jwt is an attack vector.

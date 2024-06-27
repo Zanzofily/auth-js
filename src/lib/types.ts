@@ -1,3 +1,4 @@
+import { JwtPayload } from "jsonwebtoken";
 import { AuthError } from './errors'
 import { Fetch } from './fetch'
 
@@ -348,6 +349,22 @@ export interface User {
   identities?: UserIdentity[]
   is_anonymous?: boolean
   factors?: Factor[]
+}
+
+
+export interface SessionJwtPayload extends JwtPayload {
+  sub: string;
+  id: string;
+  aud: string;
+  role?: string;
+  email?: string;
+  phone?: string;
+  is_anonymous?: boolean;
+  app_metadata: UserAppMetadata;
+  user_metadata: UserMetadata;
+  session_id?: string;
+  aal?: AuthenticatorAssuranceLevels;
+  amr?: AMREntry;
 }
 
 export interface UserAttributes {
